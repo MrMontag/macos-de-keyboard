@@ -1,0 +1,168 @@
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20', daysToKeepStr: '5'))
+        disableConcurrentBuilds()
+    }
+    
+    parameters {
+        string(defaultValue: 'macos-de-keyboard', description: 'project file name without .pro extension', name: 'projectFileName')
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                parallel linux: {
+                    node('master') {
+                        step([$class: 'WsCleanup'])
+                        checkout scm
+                        script {
+                            def projectFileName = "${params.projectFileName}"
+                            sh '''
+                                qmake "${projectFileName}.pro" CONFIG+=release && make -j3
+                            '''
+                        }
+                    }
+                },
+                windowsX86: {
+                    node('windowsX86') {
+                        step([$class: 'WsCleanup'])
+                        checkout scm
+                        script {
+                            def projectFileName = "${params.projectFileName}"
+                            bat '''
+                                @echo off
+                                echo Setting up environment for VS 2015 usage...
+                                cd "C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\bin"
+                                call vcvars32.bat
+                                cd %WORKSPACE%
+                                qmake "%projectFileName%.pro" "CONFIG+=release"
+                                nmake
+                            '''
+                        }
+                    }
+                },
+                windowsX64: {
+                    node('windowsX64') {
+                        step([$class: 'WsCleanup'])
+                        checkout scm
+                        script {
+                            def projectFileName = "${params.projectFileName}"
+                            bat '''
+                                @echo off
+                                echo Setting up environment for VS2017 usage...
+                                cd "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build"
+                                call vcvars64.bat
+                                cd %WORKSPACE%
+                                qmake "%projectFileName%.pro" "CONFIG+=release"
+                                nmake
+                            '''
+                        }
+                    }
+                },
+                macos: {
+                    node('macos') {
+                        step([$class: 'WsCleanup'])
+                        checkout scm
+                        script {
+                            def projectFileName = "${params.projectFileName}"
+                            sh '''
+                                qmake "${projectFileName}.pro" CONFIG+=release && make -j3
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        stage('Pack') {
+            steps {
+                parallel linux: {
+                    node('master') {
+                        sh '''
+                            curl --remote-name --location https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+                        '''
+                        script {
+                            sh '''
+                                # create folder structure
+                                mkdir -p appdir/usr/bin
+                                mkdir -p appdir/usr/share/pixmaps
+
+                                # collect files
+                                cp "bin/${projectFileName}" appdir/usr/bin/
+                                cp "${projectFileName}.desktop" "appdir/usr/share/${projectFileName}.desktop"
+                                cp icons/* appdir/usr/share/pixmaps
+
+                                # TODO (AF) take a look at linuxdeployqt
+                                # workaround for linuxdeployqt and svg
+                                #mkdir -p appdir/usr/plugins/imageformats
+                                #cp /opt/Qt/5.11.0/plugins/imageformats/libqsvg.so appdir/usr/plugins/imageformats/
+
+                                chmod +x linuxdeployqt-continuous-x86_64.AppImage
+                                ./linuxdeployqt-continuous-x86_64.AppImage --version
+                                ./linuxdeployqt-continuous-x86_64.AppImage "appdir/usr/share/${projectFileName}.desktop" -appimage -bundle-non-qt-libs -no-translations -extra-plugins=iconengines -exclude-libs=libnss3,libnssutil3
+                            '''
+                            archiveArtifacts artifacts: "*${projectFileName}*.AppImage", fingerprint: true
+                        }
+                    }
+                },
+                windowsX86: {
+                    node('windowsX86') {
+                        script {
+                            bat 'windeployqt --release --compiler-runtime --force bin\\%projectFileName%.exe'
+                            fileOperations([folderCreateOperation('tmp/projectFileName}'), folderCopyOperation(destinationFolderPath: 'tmp/${projectFileName}', sourceFolderPath: 'bin')])
+                                withCredentials([certificate(aliasVariable: '', credentialsId: '302df092-b329-47b9-8f7a-605da075126d', keystoreVariable: 'WIN_CERT_FILE', passwordVariable: 'WIN_CERT_PASSWD')]) {
+                                bat '''
+                                    echo Setting up environment for VS 2015 usage...
+                                    cd "C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\bin"
+                                    call vcvars32.bat
+                                    cd %WORKSPACE%\\tmp\\%projectFileName%
+                                    signtool sign /v /f %WIN_CERT_FILE% /p %WIN_CERT_PASSWD% /tr http://timestamp.comodoca.com/rfc3161 %projectFileName%.exe
+                                '''
+                            }
+                            zip zipFile: "${projectFileName}-x32.zip", archive: true, dir: 'tmp'
+                        }
+                    }
+                },
+                windowsX64: {
+                    node('windowsX64') {
+                        script {
+                            bat 'windeployqt --release --compiler-runtime --force bin\\%projectFileName%.exe'
+                            fileOperations([folderCreateOperation('tmp/${projectFileName}'), folderCopyOperation(destinationFolderPath: 'tmp/${projectFileName}', sourceFolderPath: 'bin')])
+                            withCredentials([certificate(aliasVariable: '', credentialsId: '302df092-b329-47b9-8f7a-605da075126d', keystoreVariable: 'WIN_CERT_FILE', passwordVariable: 'WIN_CERT_PASSWD')]) {
+                                bat '''
+                                    echo Setting up environment for VS2017 usage...
+                                    cd "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build"
+                                    call vcvars64.bat
+                                    cd %WORKSPACE%\\tmp\\%projectFileName%
+                                    signtool sign /v /f %WIN_CERT_FILE% /p %WIN_CERT_PASSWD% /tr http://timestamp.comodoca.com/rfc3161 %projectFileName%.exe
+                                '''
+                            }
+                            zip zipFile: "${projectFileName}-x64.zip", archive: true, dir: 'tmp'
+                        }
+                    }
+                },
+                macos: {
+                    node('macos') {
+                        script {
+                            withCredentials([string(credentialsId: '2e590f95-5e30-4101-93be-31a1b7402da4', variable: 'MACOS_KEYCHAIN_PASSWD')]) {
+                                sh '''
+                                    security unlock-keychain -p ${MACOS_KEYCHAIN_PASSWD}
+                                    macdeployqt "bin/${projectFileName}.app" -dmg -always-overwrite -codesign=${CODESIGN_IDENTITY}
+                                    security lock-keychain
+                                '''
+                                sh '''
+                                    codesign --verify --verbose "bin/${projectFileName}.app"
+                                '''
+                            }
+                            sh '''
+                                mv "bin/${projectFileName}.dmg" ${projectFileName}.dmg
+                            '''
+                        }
+                        archiveArtifacts artifacts: '*.dmg', fingerprint: true
+                    }
+                }
+            }
+        }
+    }
+}

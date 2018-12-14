@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=macos-de-keyboard
+TryExec=macos-de-keyboard
+Exec=macos-de-keyboard %F
+Icon=gamslogo
+Terminal=false
+Categories=Development;IDE;
