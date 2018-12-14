@@ -30,6 +30,7 @@ void MyTextEdit::inputMethodEvent(QInputMethodEvent *event)
 {
     emit debugText("start");
     emit debugText(event->commitString());
+    appendPlainText(event->commitString());
     emit debugText("end");
 }
 
