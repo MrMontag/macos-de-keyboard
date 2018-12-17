@@ -1,5 +1,5 @@
 # macos-de-keyboard
-Test project for a macOS Mojave related QPlainTextEdit issue with accented charaters.
+Test project for a macOS Mojave related QPlainTextEdit issue with accented characters.
 
 # Description
 
