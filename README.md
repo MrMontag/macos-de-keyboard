@@ -3,7 +3,7 @@ Test project for a macOS Mojave related QPlainTextEdit issue with accented chara
 
 # Description
 
-If a QPlainTextEdit is used on macOS and the accented charater is typed then QPlainTextEdit blocks user actions like text seletion. This behaviour occurs when the accent charater is pressed and a user tries to select text, like he wants to abort the writing of a composed charater. With Qt 5.11.2, 5.11.3 and 5.12.0 the QPlainTextEdit blocks text selection if the first half of a composed charater is written.
+If a QPlainTextEdit is used on macOS and a accented charater is typed then QPlainTextEdit blocks user actions like text selection. This behaviour occurs when the accent character is pressed and a user tries to select text, like he wants to abort the writing of a composed character. With Qt 5.11.2, 5.11.3 and 5.12.0 the QPlainTextEdit blocks text selection if the first half of a composed character is written.
 
 **Steps to reproduce the isse**
 1. Make sure you have a German or French keyboard layout configured
